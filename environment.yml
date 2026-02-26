@@ -178,4 +178,3 @@ dependencies:
       - wandb==0.19.8
       - widgetsnbextension==4.0.13
       - wrapt==1.17.3
-prefix: /cto_studio/xtalpi_lab/fengbin/anaconda3/envs/protenix
