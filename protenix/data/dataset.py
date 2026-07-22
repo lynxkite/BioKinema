@@ -470,7 +470,12 @@ class BaseSingleDataset(Dataset):
             saved_traj_names = os.listdir(self.precomputed_emb_dir)
             saved_traj_names = [x.split('.')[0] for x in saved_traj_names]
             saved_traj_names = set(saved_traj_names)
-            self.traj_name_list = [x for x in self.traj_name_list if x in saved_traj_names]
+            # Support both full traj_name and canonical short keys used by dump_embeddings.
+            self.traj_name_list = [
+                x
+                for x in self.traj_name_list
+                if (x in saved_traj_names) or ('_'.join(x.split('_')[:3]) in saved_traj_names)
+            ]
 
         self.filter_traj_list()
         self.traj_name_list = sorted(self.traj_name_list)
