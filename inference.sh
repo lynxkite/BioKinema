@@ -13,8 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-export CUTLASS_PATH=/path/to/cutlass
-export CUDA_HOME=/path/to/cuda
 export PYTHONPATH=$PYTHONPATH:$(pwd)
 export LAYERNORM_TYPE=fast_layernorm
 export USE_DEEPSPEED_EVO_ATTTENTION=true
