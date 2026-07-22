@@ -2532,6 +2532,8 @@ def get_datasets(
             train_dataset = MisatoSingleDataset(**dataset_param)
         elif "mdposit" in train_name.lower():
             train_dataset = MDpositSingleDataset(**dataset_param)
+        elif "lynxkite" in train_name.lower():
+            train_dataset = AtlasSingleDataset(**dataset_param)
         elif "atlas" in train_name.lower():
             train_dataset = AtlasSingleDataset(**dataset_param)
         elif train_name.upper().startswith("MSR-"):
@@ -2588,6 +2590,8 @@ def get_datasets(
                 test_dataset = MisatoSingleDataset(**dataset_param)
         elif "mdposit" in test_name.lower():
             test_dataset = MDpositSingleDataset(**dataset_param)
+        elif "lynxkite" in test_name.lower():
+            test_dataset = AtlasSingleDataset(**dataset_param)
         elif "atlas" in test_name.lower():
             test_dataset = AtlasSingleDataset(**dataset_param)
         elif "example" in test_name.lower() or "bioemu" in test_name.lower():

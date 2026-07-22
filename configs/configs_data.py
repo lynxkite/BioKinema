@@ -29,6 +29,7 @@ from protenix.config.extend_types import GlobalConfigValue, ListValue
 DATA_ROOT_DIR = os.environ.get("BIOKINEMA_DATA_ROOT", "./release_data")
 ATLAS_DATA_ROOT_DIR = os.environ.get("BIOKINEMA_ATLAS_ROOT", "./data/atlas")
 UNBINDING_DATA_ROOT_DIR = os.environ.get("BIOKINEMA_UNBINDING_ROOT", "./data")
+LYNXKITE_DATA_ROOT_DIR = os.environ.get("BIOKINEMA_LYNXKITE_ROOT", "/data/converted_trajectories")
 
 MISATO_DATA_ROOT_DIR = os.environ.get("BIOKINEMA_MISATO_ROOT", UNBINDING_DATA_ROOT_DIR)
 
@@ -279,6 +280,59 @@ for split in ['train', 'val', 'test', 'repr', 'test_repr']:
     )
     data_configs[f"atlas_{split}"]["base_info"]["indices_fpath"] = os.path.join(
         ATLAS_DATA_ROOT_DIR, f"indices_{split}.csv"
+    )
+
+###########################
+# LynxKite finetuning data
+###########################
+data_configs["lynxkite"] = deepcopy(data_configs["atlas"])
+data_configs["lynxkite"]["base_info"].update(
+    {
+        "mmcif_dir": os.path.join(LYNXKITE_DATA_ROOT_DIR, "mmcif", "train"),
+        "bioassembly_dict_dir": os.path.join(LYNXKITE_DATA_ROOT_DIR, "mmcif_bioassembly_train"),
+        "indices_fpath": os.path.join(LYNXKITE_DATA_ROOT_DIR, "indices_train.csv"),
+        "use_reference_chains_only": False,
+        "random_sample_if_failed": True,
+    }
+)
+data_configs["lynxkite"].update(
+    {
+        "sampler_configs": {
+            "sampler_type": "uniform",
+        },
+        "cropping_configs": {
+            "method_weights": ListValue([0.0, 1.0, 0.0]),
+            "crop_size": GlobalConfigValue("train_crop_size"),
+        },
+        "precomputed_emb_dir": os.path.join(LYNXKITE_DATA_ROOT_DIR, "pairformer_emb_train"),
+        "msa_cache_path": os.path.join(LYNXKITE_DATA_ROOT_DIR, "msa"),
+        "msm_cache_dir": "NONE",
+        "msm_build_missing": False,
+        "n_coarse_states": 10,
+        "msm_configs": {
+            "n_tica_dims": 5,
+            "n_clusters_coarse": 10,
+            "n_clusters_fine": 50,
+        },
+    }
+)
+
+for split in ["train", "test"]:
+    data_configs[f"lynxkite_{split}"] = deepcopy(data_configs["lynxkite"])
+    data_configs[f"lynxkite_{split}"].update(
+        **deepcopy(default_test_configs),
+    )
+    data_configs[f"lynxkite_{split}"]["base_info"]["mmcif_dir"] = os.path.join(
+        LYNXKITE_DATA_ROOT_DIR, "mmcif", split
+    )
+    data_configs[f"lynxkite_{split}"]["base_info"]["bioassembly_dict_dir"] = os.path.join(
+        LYNXKITE_DATA_ROOT_DIR, f"mmcif_bioassembly_{split}"
+    )
+    data_configs[f"lynxkite_{split}"]["base_info"]["indices_fpath"] = os.path.join(
+        LYNXKITE_DATA_ROOT_DIR, f"indices_{split}.csv"
+    )
+    data_configs[f"lynxkite_{split}"]["precomputed_emb_dir"] = os.path.join(
+        LYNXKITE_DATA_ROOT_DIR, f"pairformer_emb_{split}"
     )
 
 ####################################
