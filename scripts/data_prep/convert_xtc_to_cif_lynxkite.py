@@ -6,12 +6,54 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import mdtraj
+import numpy as np
 from biotite.structure.io import load_structure, save_structure
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
 
 HOLDOUT_TOKENS = ("A779", "POSTSTERONE")
+
+# Common membrane lipid/cofactor residue names to exclude from ligand candidates.
+LIPID_RESNAMES = {
+    "POPC",
+    "POPE",
+    "POPG",
+    "POPS",
+    "POPA",
+    "DOPC",
+    "DOPE",
+    "DOPG",
+    "DPPC",
+    "DPPE",
+    "DLPC",
+    "DSPC",
+    "DMPC",
+    "CHOL",
+    "CHL",
+    "CLA",
+    "BGL",
+    "BGLCN",
+    "BMA",
+}
+
+LIPID_RESNAME_PREFIXES = (
+    "POP",
+    "DOP",
+    "DSP",
+    "DPP",
+    "DMP",
+    "PSM",
+    "CER",
+    "CHL",
+    "CLA",
+    "BGL",
+    "BMA",
+    "MAN",
+)
+
+ION_ELEMENTS = {"NA", "K", "CL", "CA", "MG", "ZN", "MN", "FE", "CU", "CO"}
+ION_RESNAMES = {"SOD", "POT", "CLA", "NA", "K", "CL", "CA", "MG", "ZN"}
 
 
 @dataclass
@@ -69,6 +111,18 @@ def parse_args():
         dest="strict_topology_check",
         help="Disable strict atom-name/order sanity check between topology and temporary PDB frame.",
     )
+    parser.add_argument(
+        "--ligand_cutoff_nm",
+        type=float,
+        default=0.6,
+        help="Distance cutoff (nm) to protein for keeping non-protein ligand atoms.",
+    )
+    parser.add_argument(
+        "--max_ligand_atoms",
+        type=int,
+        default=256,
+        help="Maximum atoms in one non-protein residue to consider as ligand candidate.",
+    )
     parser.set_defaults(strict_topology_check=True)
     return parser.parse_args()
 
@@ -88,22 +142,27 @@ def pick_topology(xtc_path: Path, project_dir: Path, allow_pdb_fallback: bool = 
     stem = xtc_path.stem
     base_stem = stem.split(".part")[0]
 
-    # Prefer exact stream matches, then md defaults, then npt defaults.
+    # mdtraj cannot load .tpr topology directly, so prefer .gro candidates only.
     direct_candidates = [
         parent / f"{stem}.gro",
-        parent / f"{stem}.tpr",
         parent / f"{base_stem}.gro",
-        parent / f"{base_stem}.tpr",
         parent / "md.gro",
-        parent / "md.tpr",
         parent / "npt2.gro",
-        parent / "npt2.tpr",
         parent / "npt1.gro",
-        parent / "npt1.tpr",
     ]
     for candidate in direct_candidates:
         if candidate.exists():
             return candidate
+
+    # For segmented streams, reuse any available segment .gro in the same series.
+    segmented_gro = sorted(parent.glob(f"{base_stem}.part*.gro"))
+    if segmented_gro:
+        return segmented_gro[-1]
+
+    # Last chance before PDB fallback: any .gro in the same folder.
+    any_gro = sorted(parent.glob("*.gro"))
+    if any_gro:
+        return any_gro[0]
 
     if not allow_pdb_fallback:
         return None
@@ -257,12 +316,79 @@ def strict_topology_sanity_check(traj):
             )
 
 
+def _is_ion_residue(residue):
+    if residue.name.upper() in ION_RESNAMES:
+        return True
+    if residue.n_atoms != 1:
+        return False
+    atom = list(residue.atoms)[0]
+    if atom.element is None:
+        return False
+    return atom.element.symbol.upper() in ION_ELEMENTS
+
+
+def _is_membrane_like_residue(residue):
+    resname = residue.name.upper()
+    if resname in LIPID_RESNAMES:
+        return True
+    return any(resname.startswith(prefix) for prefix in LIPID_RESNAME_PREFIXES)
+
+
+def select_protein_and_ligand_atoms(traj, ligand_cutoff_nm: float, max_ligand_atoms: int):
+    top = traj.topology
+    protein_atom_indices = top.select("protein")
+    if protein_atom_indices.size == 0:
+        raise ValueError("No protein atoms found; cannot apply protein+ligand filter")
+
+    candidate_residues = []
+    candidate_atom_indices = []
+    for residue in top.residues:
+        if residue.is_protein:
+            continue
+        if residue.is_water:
+            continue
+        if _is_membrane_like_residue(residue):
+            continue
+        if residue.n_atoms > max_ligand_atoms:
+            continue
+        if _is_ion_residue(residue):
+            continue
+
+        atom_indices = [atom.index for atom in residue.atoms]
+        if not atom_indices:
+            continue
+        candidate_residues.append(residue)
+        candidate_atom_indices.extend(atom_indices)
+
+    ligand_atom_indices = []
+    ligand_residue_names = []
+    if candidate_atom_indices:
+        neighbors = mdtraj.compute_neighbors(
+            traj[0],
+            cutoff=ligand_cutoff_nm,
+            query_indices=protein_atom_indices,
+            haystack_indices=np.array(candidate_atom_indices, dtype=int),
+        )[0]
+        neighbor_set = set(int(i) for i in neighbors)
+
+        for residue in candidate_residues:
+            atom_indices = [atom.index for atom in residue.atoms]
+            if any(idx in neighbor_set for idx in atom_indices):
+                ligand_atom_indices.extend(atom_indices)
+                ligand_residue_names.append(residue.name)
+
+    selected = sorted(set(int(i) for i in protein_atom_indices.tolist() + ligand_atom_indices))
+    return np.array(selected, dtype=int), sorted(set(ligand_residue_names))
+
+
 def convert_job(
     job: TrajectoryJob,
     mmcif_root: Path,
     frame_stride: int,
     skip_existing: bool,
     strict_topology_check: bool,
+    ligand_cutoff_nm: float,
+    max_ligand_atoms: int,
 ):
     split_dir = mmcif_root / job.split
     split_dir.mkdir(parents=True, exist_ok=True)
@@ -276,6 +402,23 @@ def convert_job(
             "job": job.trajectory_key,
             "split": job.split,
             "error": f"failed to load: {exc}",
+            "generated": generated_paths,
+            "audit": {},
+        }
+
+    try:
+        selected_atom_indices, ligand_residue_names = select_protein_and_ligand_atoms(
+            traj,
+            ligand_cutoff_nm=ligand_cutoff_nm,
+            max_ligand_atoms=max_ligand_atoms,
+        )
+        traj = traj.atom_slice(selected_atom_indices)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "job": job.trajectory_key,
+            "split": job.split,
+            "error": f"protein+ligand filtering failed: {exc}",
             "generated": generated_paths,
             "audit": {},
         }
@@ -322,6 +465,8 @@ def convert_job(
         "n_atoms": traj.n_atoms,
         "top_ext": job.top_path.suffix.lower(),
         "topology": str(job.top_path),
+        "ligand_residue_names": ",".join(ligand_residue_names[:20]),
+        "n_ligand_residue_types": len(set(ligand_residue_names)),
     }
     if generated_paths:
         audit.update(build_cif_metadata_summary(Path(generated_paths[0])))
@@ -370,6 +515,8 @@ def write_metadata_audit(results, jobs_by_key, out_path: Path):
         "label_entity_ids",
         "label_asym_ids",
         "label_comp_ids",
+        "n_ligand_residue_types",
+        "ligand_residue_names",
         "error",
     ]
     with open(out_path, "w", newline="") as f:
@@ -395,6 +542,8 @@ def write_metadata_audit(results, jobs_by_key, out_path: Path):
                     "label_entity_ids": audit.get("label_entity_ids", ""),
                     "label_asym_ids": audit.get("label_asym_ids", ""),
                     "label_comp_ids": audit.get("label_comp_ids", ""),
+                    "n_ligand_residue_types": audit.get("n_ligand_residue_types", ""),
+                    "ligand_residue_names": audit.get("ligand_residue_names", ""),
                     "error": r.get("error", "") or "",
                 }
             )
@@ -431,6 +580,8 @@ def main():
     print(f"No-topology skipped trajectories: {len(skipped_no_top)}")
     print(f"PDB fallback allowed: {args.allow_pdb_fallback}")
     print(f"Strict topology check: {args.strict_topology_check}")
+    print(f"Ligand cutoff (nm): {args.ligand_cutoff_nm}")
+    print(f"Max ligand atoms per residue: {args.max_ligand_atoms}")
 
     if not selected_jobs:
         return
@@ -446,6 +597,8 @@ def main():
                         args.frame_stride,
                         args.skip_existing,
                         args.strict_topology_check,
+                        args.ligand_cutoff_nm,
+                        args.max_ligand_atoms,
                     )
                     for job in selected_jobs
                 ),
@@ -463,6 +616,8 @@ def main():
                     args.frame_stride,
                     args.skip_existing,
                     args.strict_topology_check,
+                    args.ligand_cutoff_nm,
+                    args.max_ligand_atoms,
                 )
             )
 
