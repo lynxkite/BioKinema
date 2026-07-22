@@ -152,7 +152,7 @@ class BaseSingleDataset(Dataset):
 
         if self.msm_cache_dir is not None and self.msm_cache_dir != "NONE" and not self.dump_embeddings:
             self._init_msm()
-    
+
     def filter_traj_list(self):
         if self.downsample > 0:
             random.seed(66)
@@ -455,7 +455,7 @@ class BaseSingleDataset(Dataset):
         token_crop_size = kwargs.get("token_crop_size", 384)
         print("token_crop_size", token_crop_size)
 
-        
+
         self.traj_name_list = sorted(list(set(self.indices_list.traj_name)))
         random.seed(66)
         random.shuffle(self.traj_name_list)
@@ -657,7 +657,7 @@ class BaseSingleDataset(Dataset):
                 with open(fpath, "w") as f:
                     json.dump(data, f)
 
-    
+
     def get_time_interval(self, traj_name: str, spacing: float, **kwargs) -> float:
         raise NotImplementedError
 
@@ -826,9 +826,9 @@ class BaseSingleDataset(Dataset):
                 traj_name = self.traj_name_list[idx]
                 target_indices = self.indices_list[self.indices_list.traj_name == traj_name]
                 target_indices = target_indices.sort_values(by='frame_id')
-                
+
                 sample_indice = self.indices_list.iloc[target_indices.index[0]]
-                
+
                 data = self.process_one(target_indices.index[0], return_atom_token_array=True)
                 selected_token_indices = data["basic"]["selected_token_indices"]
                 if selected_token_indices is not None:
@@ -836,7 +836,7 @@ class BaseSingleDataset(Dataset):
                 # assert data["basic"]["selected_token_indices"] is None, "selected_token_indices should be None in preference mode"
                 # if data["basic"]["selected_token_indices"] is not None:
                 #     print(data["basic"]["selected_token_indices"])
-                
+
                 # alt_idx = random.choice(target_indices.index)
                 # random sample an alt structure other than the current one
                 traj_length = len(target_indices)
@@ -863,16 +863,16 @@ class BaseSingleDataset(Dataset):
                     N_token = data["input_feature_dict"]["token_index"].shape[0]
                     N_atom = data["input_feature_dict"]["is_dna"].shape[0]
                     temp = max(N_token, N_atom // 8)
-    
+
                     # random number of frames, push model to attention both on short and long hist/future
                     max_frame = int(5000000 / (temp*temp))
                     max_frame = min(max_frame, 50)
                     max_frame = min(max_frame, traj_length // spacing)
-                    if max_frame > 10 and is_train: 
+                    if max_frame > 10 and is_train:
                         max_frame = random.randrange(10, max_frame+1)
-                        
+
                     selected_index = []
-                    if not is_train: 
+                    if not is_train:
                         traj_begin = 0
                     else:
                         traj_begin = random.randrange(0, traj_length - (max_frame-1) * spacing )
@@ -882,19 +882,19 @@ class BaseSingleDataset(Dataset):
                         if len(selected_index) >= max_frame:
                             break
                         selected_index.append(traj_begin)
-                        traj_begin += spacing 
-    
+                        traj_begin += spacing
+
                     # reversed traj is also a real traj
                     if "unbinding" not in self.name.lower():
                         if is_train and random.random() >= 0.5:
                             selected_index.reverse()
-                            
+
                     if len(selected_index) < 2:
                         raise ValueError(f"traj_len must be at least 2")
                     # traj_len = 2 is allowed: ensemble losses (RMSF / velocity / ACF /
                     # TICA dynamics) are gated on traj_len >= 3 in loss.py, while per-frame
                     # losses (smooth_lddt / bond / mse / center) still apply.
-                    
+
 
                 frame_id = []
                 # Load frames from the real trajectory.
@@ -1214,7 +1214,7 @@ class BaseSingleDataset(Dataset):
             full_atom_array=bioassembly_dict["atom_array"],
             is_spatial_crop="spatial" in crop_method.lower(),
         )
-        
+
         # Basic info, e.g. dimension related items
         basic_info = {
             "pdb_id": (
@@ -1266,7 +1266,7 @@ class BaseSingleDataset(Dataset):
             data["cropped_atom_array"] = cropped_atom_array
             data["cropped_token_array"] = cropped_token_array
 
-        # precomputed embedding        
+        # precomputed embedding
         if self.precomputed_emb_dir is not None:
             if "traj_name" in bioassembly_dict:
                 traj_name = bioassembly_dict["traj_name"]
@@ -1284,7 +1284,7 @@ class BaseSingleDataset(Dataset):
                 load_path = self.precomputed_emb_dir / f"{traj_name.split('_Pro_lig')[0]}.pt"
             if not os.path.exists(load_path):
                 load_path = self.precomputed_emb_dir / f"{traj_name.split("|")[0]}.pt"
-            
+
             # print("loading msa from", load_path)
             if os.path.exists(load_path):
                 # print("reading from", load_path)
@@ -1555,7 +1555,7 @@ class AtlasSingleDataset(BaseSingleDataset):
 
     def get_time_interval(self, traj_name: str, spacing: float, **kwargs) -> float:
         return 0.1 * spacing
-    
+
     def get_spacing(self, traj_name: str, traj_length: int, **kwargs) -> float:
         # Val spacing aligned with MSM lagtime_frames (=10 for Atlas), which is within the
         # training spacing distribution. Previous value (50) created a 100 ns ergodic window
@@ -1591,7 +1591,7 @@ class AtlasSingleDataset(BaseSingleDataset):
 class MisatoSingleDataset(BaseSingleDataset):
     def get_time_interval(self, traj_name: str, spacing: float, **kwargs) -> float:
         return 0.08 * spacing
-    
+
     def get_spacing(self, traj_name: str, traj_length: int, **kwargs) -> float:
         if "test" in self.name or "val" in self.name:
             return 10
@@ -1617,7 +1617,7 @@ class MisatoSingleDataset(BaseSingleDataset):
         # print(self.traj_name2num_tokens)
         if kwargs["interval_fpath"] is not None:
             self.interval_dict = json.load(open(kwargs["interval_fpath"], "r"))
-        
+
         self.traj_name_list = sorted(list(set(self.indices_list.traj_name)))
         random.seed(66)
         random.shuffle(self.traj_name_list)
@@ -1625,7 +1625,7 @@ class MisatoSingleDataset(BaseSingleDataset):
         self.traj_name_list = [x for x in self.traj_name_list if int(self.traj_name2num_tokens[x]) <= token_crop_size]
         self.precomputed_emb_dir = kwargs.get("precomputed_emb_dir", None)
         self.precomputed_emb_dir = Path(self.precomputed_emb_dir)
-        
+
         if not (kwargs["dump_embeddings"] or "example" in self.name):
             saved_traj_names = os.listdir(self.precomputed_emb_dir)
             saved_traj_names = [x.split('.')[0] for x in saved_traj_names]
@@ -1736,10 +1736,10 @@ class MisatoSingleDataset(BaseSingleDataset):
         # read all indices csv files, and concat them
         indices_list_all = []
         print(indices_fpath)
-        
+
         # for fpath in tqdm(list(glob.glob(os.path.join(indices_fpath, "*.csv")))[:10]):
-        for fpath in tqdm(glob.glob(os.path.join(indices_fpath, "*.csv"))): 
-            indices_list = self.super_read_indices_list(fpath) 
+        for fpath in tqdm(glob.glob(os.path.join(indices_fpath, "*.csv"))):
+            indices_list = self.super_read_indices_list(fpath)
             indices_list_all.append(indices_list)
         indices_list_all = pd.concat(indices_list_all, axis=0)
         indices_list_all = indices_list_all.drop_duplicates(subset="pdb_id", keep="first")
@@ -1748,7 +1748,7 @@ class MisatoSingleDataset(BaseSingleDataset):
 
 
 class MDpositSingleDataset(MisatoSingleDataset):
-    
+
     def get_time_interval(self, traj_name: str, spacing: float, **kwargs) -> float:
         """
         Retrieves the time interval for a specific trajectory name.
@@ -1759,8 +1759,8 @@ class MDpositSingleDataset(MisatoSingleDataset):
         Returns:
             The time interval as a float value.
         """
-        return spacing * self.interval_dict[traj_name] 
-    
+        return spacing * self.interval_dict[traj_name]
+
     def get_spacing(self, traj_name: str, traj_length: int, **kwargs) -> float:
         """
         Retrieves the spacing for a specific trajectory name.
@@ -1795,7 +1795,7 @@ class MDpositSingleDataset(MisatoSingleDataset):
 
 
 class MSRSingleDataset(MisatoSingleDataset):
-    
+
     def get_time_interval(self, traj_name: str, spacing: float, **kwargs) -> float:
         """
         Retrieves the time interval for a specific trajectory name.
@@ -1807,7 +1807,7 @@ class MSRSingleDataset(MisatoSingleDataset):
             The time interval as a float value.
         """
         return spacing * 10 # fixed interval with 10 ns
-    
+
     def get_spacing(self, traj_name: str, traj_length: int, **kwargs) -> float:
         """
         Retrieves the spacing for a specific trajectory name.
@@ -1847,7 +1847,7 @@ class ExampleDataset(MisatoSingleDataset):
     def get_time_interval(self, traj_name: str, spacing: float, **kwargs) -> float:
         print(f"time interval = {0.1 * spacing} ns")
         return 0.1 * spacing
-    
+
     def get_spacing(self, traj_name: str, traj_length: int, **kwargs) -> float:
         return 200
 
@@ -1857,13 +1857,13 @@ class UnbindingSingleDataset(MisatoSingleDataset):
         traj_length = kwargs["traj_length"]
         max_spacing = math.ceil(traj_length / 50.)
         return float(spacing) / float(max_spacing)
-    
+
     def get_spacing(self, traj_name: str, traj_length: int, **kwargs) -> float:
         # return 1
         min_spacing = 1
         max_spacing = math.ceil(traj_length / 50.)
 
-        if "test" in self.name or "val" in self.name: 
+        if "test" in self.name or "val" in self.name:
             return max_spacing
 
         if min_spacing >= max_spacing:
@@ -1879,7 +1879,7 @@ class UnbindingSingleDataset(MisatoSingleDataset):
         # print(self.traj_name2num_tokens)
         if kwargs["interval_fpath"] is not None:
             self.interval_dict = json.load(open(kwargs["interval_fpath"], "r"))
-        
+
         self.traj_name_list = sorted(list(set(self.indices_list.traj_name)))
         random.seed(66)
         random.shuffle(self.traj_name_list)
@@ -1887,7 +1887,7 @@ class UnbindingSingleDataset(MisatoSingleDataset):
         self.traj_name_list = [x for x in self.traj_name_list if int(self.traj_name2num_tokens[x]) <= token_crop_size]
         self.precomputed_emb_dir = kwargs.get("precomputed_emb_dir", None)
         self.precomputed_emb_dir = Path(self.precomputed_emb_dir)
-        
+
         if not (kwargs["dump_embeddings"] or "example" in self.name):
             saved_traj_names = os.listdir(self.precomputed_emb_dir)
             saved_traj_names = [x.split('.')[0] for x in saved_traj_names]
@@ -1912,7 +1912,7 @@ class InferenceDataset(BaseSingleDataset):
     """
     Dataset for inference from a single PDB or CIF file.
     """
-    
+
     def __init__(
         self,
         input_file: Union[str, Path],
@@ -1932,16 +1932,16 @@ class InferenceDataset(BaseSingleDataset):
         self.base_time_interval = kwargs.pop("time_interval", 0.1)
         print("time_interval:", self.base_time_interval)
         self.dataset_type = "inference"
-        
+
         # Handle precomputed_emb_path -> precomputed_emb_dir
         precomputed_emb_path = kwargs.pop("precomputed_emb_path", None)
         if precomputed_emb_path and "precomputed_emb_dir" not in kwargs:
             kwargs["precomputed_emb_dir"] = str(Path(precomputed_emb_path).parent)
-        
+
         # Create output directories
         self.bioassembly_output_dir = self.output_dir / "bioassembly"
         self.bioassembly_output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Process input file
         self.cif_file = self._ensure_cif_format()
         self._generated_bioassembly_dict, self._generated_sample_indices = self._preprocess_cif()
@@ -1958,9 +1958,9 @@ class InferenceDataset(BaseSingleDataset):
         kwargs["indices_fpath"] = str(self.indices_csv_path)
 
         super().__init__(**kwargs)
-        
+
         logger.info(f"InferenceDataset initialized: {len(self.traj_name_list)} trajectories from {self.input_file}")
-    
+
     @staticmethod
     def _update_nested_dict(base: dict, update: dict) -> None:
         """Recursively update nested dictionary."""
@@ -1976,11 +1976,11 @@ class InferenceDataset(BaseSingleDataset):
         pdb_structure = load_structure(str(pdb_path))
         save_structure(str(cif_path), pdb_structure)
         logger.info(f"Converted PDB to CIF: {pdb_path} -> {cif_path}")
-        
+
     def _ensure_cif_format(self) -> Path:
         """Ensure input file is CIF format, convert if necessary."""
         suffix = self.input_file.suffix.lower()
-        
+
         if suffix == ".pdb":
             cif_path = self.output_dir / f"{self.input_file.stem}.cif"
             self._pdb_to_cif(self.input_file, cif_path)
@@ -1990,7 +1990,7 @@ class InferenceDataset(BaseSingleDataset):
         elif suffix == ".gz":
             import gzip
             import shutil
-            
+
             if self.input_file.name.endswith(".cif.gz"):
                 return self.input_file
             elif self.input_file.name.endswith(".pdb.gz"):
@@ -2001,9 +2001,9 @@ class InferenceDataset(BaseSingleDataset):
                 cif_path = self.output_dir / f"{decompressed.stem}.cif"
                 self._pdb_to_cif(decompressed, cif_path)
                 return cif_path
-        
+
         raise ValueError(f"Unsupported file format: {suffix}")
-    
+
     def _preprocess_cif(self) -> tuple[dict[str, Any], list[dict]]:
         """Preprocess CIF file to generate bioassembly data."""
         try:
@@ -2013,16 +2013,16 @@ class InferenceDataset(BaseSingleDataset):
         except Exception as e:
             logger.error(f"Failed to preprocess {self.cif_file}: {e}")
             raise
-        
+
         if not sample_indices_list or not bioassembly_dict:
             raise ValueError(f"Failed to generate data from {self.cif_file}")
-        
+
         pdb_id = bioassembly_dict.get("pdb_id") or self.cif_file.stem
         bioassembly_dict["pdb_id"] = pdb_id
-        
+
         self.bioassembly_fpath = self.bioassembly_output_dir / f"{pdb_id}.pkl.gz"
         dump_gzip_pickle(bioassembly_dict, self.bioassembly_fpath)
-        
+
         logger.info(f"Preprocessed: {len(sample_indices_list)} samples from {self.cif_file}")
         return bioassembly_dict, sample_indices_list
 
@@ -2068,7 +2068,7 @@ class InferenceDataset(BaseSingleDataset):
         # persist the corrected bioassembly so downstream reads see the right bonds
         dump_gzip_pickle(self._generated_bioassembly_dict, self.bioassembly_fpath)
         logger.info(f"[ligand_bonds] replaced bonds for {stem} from {os.path.basename(cand[0])}")
-    
+
     def preprocess_indices_list(self, kwargs: dict) -> None:
         """Override parent's method for inference."""
         if "traj_name" not in self.indices_list.columns:
@@ -2079,27 +2079,27 @@ class InferenceDataset(BaseSingleDataset):
             self.indices_list["frame_id"] = self.indices_list["pdb_id"].apply(
                 lambda x: int(x.split("_")[-1]) if "_" in x and x.split("_")[-1].isdigit() else 0
             )
-        
+
         self.traj_name_list = sorted(set(self.indices_list.traj_name))
         self.precomputed_emb_dir = Path(kwargs.get("precomputed_emb_dir")) if kwargs.get("precomputed_emb_dir") else None
-    
+
     def get_time_interval(self, traj_name: str, spacing: float, **kwargs) -> float:
         return self.base_time_interval * spacing
-    
+
     def get_spacing(self, traj_name: str, traj_length: int, **kwargs) -> int:
         return 1
-    
+
     def _get_bioassembly_data(self, idx: int) -> tuple[pd.Series, dict[str, Any], str]:
         """Override to use preprocessed bioassembly data."""
         sample_indice = self._get_sample_indice(idx)
         bioassembly_dict = deepcopy(self._generated_bioassembly_dict)
         bioassembly_dict["pdb_id"] = sample_indice.pdb_id
         return sample_indice, bioassembly_dict, str(self.bioassembly_fpath)
-    
+
     def get_bioassembly_dict(self) -> dict[str, Any]:
         """Return the bioassembly dictionary."""
         return self._generated_bioassembly_dict
-    
+
     def get_indices_dataframe(self) -> pd.DataFrame:
         """Return the indices DataFrame."""
         return self.indices_list
@@ -2109,13 +2109,13 @@ class EmptyDataset(Dataset):
     def __init__(self):
         self.merged_datapoint_weights = []
         pass
-    
+
     def __len__(self):
         return 0
-    
+
     def __getitem__(self, idx):
         raise IndexError("Empty dataset")
-        
+
 
 def get_msa_featurizer(configs, dataset_name: str, stage: str, msa_cache_path: str) -> Optional[Callable]:
     """
@@ -2188,11 +2188,11 @@ def get_msa_featurizer(configs, dataset_name: str, stage: str, msa_cache_path: s
 #                                            many times each of its samples should be
 #                                            duplicated.
 #     """
-#     def __init__(self, 
-#                  datasets: list[Dataset], 
-#                  dataset_names: list[str], 
+#     def __init__(self,
+#                  datasets: list[Dataset],
+#                  dataset_names: list[str],
 #                  dataset_sample_weights: list[int]):
-        
+
 #         # Validate that the input lists have the same length
 #         if not (len(datasets) == len(dataset_names) == len(dataset_sample_weights)):
 #             raise ValueError("The lengths of datasets, dataset_names, and dataset_sample_weights must be the same.")
@@ -2200,7 +2200,7 @@ def get_msa_featurizer(configs, dataset_name: str, stage: str, msa_cache_path: s
 #         self.datasets = datasets
 #         self.dataset_names = dataset_names
 #         self.weights = dataset_sample_weights
-        
+
 #         # self.indices will store pointers to the original samples as (dataset_index, sample_index)
 #         self.indices = []
 
@@ -2212,7 +2212,7 @@ def get_msa_featurizer(configs, dataset_name: str, stage: str, msa_cache_path: s
 #             weight = self.weights[i]
 #             if not isinstance(weight, int) or weight < 0:
 #                 raise TypeError(f"Weight must be a non-negative integer, but dataset '{self.dataset_names[i]}' has a weight of {weight}.")
-            
+
 #             num_original_samples = len(dataset)
 #             num_new_samples = num_original_samples * weight
 #             total_new_samples += num_new_samples
@@ -2224,11 +2224,11 @@ def get_msa_featurizer(configs, dataset_name: str, stage: str, msa_cache_path: s
 #             # For each sample in this dataset, add its index 'weight' times
 #             for sample_idx in range(num_original_samples):
 #                 self.indices.extend([(i, sample_idx)] * weight)
-        
+
 #         # Shuffle all indices to ensure the data is well-mixed
 #         random.seed(66)
 #         random.shuffle(self.indices)
-        
+
 #         print(f"------------------------------------")
 #         print(f"Initialization complete. Total size of the new dataset: {len(self.indices)}")
 #         assert len(self.indices) == total_new_samples
@@ -2241,7 +2241,7 @@ def get_msa_featurizer(configs, dataset_name: str, stage: str, msa_cache_path: s
 #         """Retrieves a data sample based on the index."""
 #         # Look up the pre-built list of indices
 #         dataset_idx, sample_idx = self.indices[idx]
-        
+
 #         # Fetch the data from the corresponding original dataset
 #         return self.datasets[dataset_idx][sample_idx]
 
@@ -2609,7 +2609,7 @@ def get_datasets(
                 )
             else:
                 raise ValueError(f"Unknown dataset type: {test_name}")
-            
+
         test_datasets[test_name] = test_dataset
 
     return train_dataset, test_datasets

@@ -347,7 +347,7 @@ for split in ["train", "test"]:
 #     }
 # )
 # data_configs[f"example"].update(
-#      {   
+#      {
 #          "precomputed_emb_dir": "/cto_studio/xtalpi_lab/fengbin/Protenix_v0.2.0/Protenix/fb_analysis/completed_embed_files"
 #      }
 # )
@@ -365,7 +365,7 @@ for split in ["train", "test"]:
 #     }
 # )
 # data_configs[f"example_test"].update(
-#      {   
+#      {
 #          "precomputed_emb_dir": ""
 #      }
 # )
@@ -384,7 +384,7 @@ data_configs[f"example"]["base_info"].update(
     }
 )
 data_configs[f"example"].update(
-     {   
+     {
          "precomputed_emb_dir": ""
      }
 )
@@ -411,14 +411,14 @@ for testset in ['crypticpocket', 'domainmotion', 'localunfolding', 'ood60', 'ood
     )
     data_configs[f"bioemu-{testset}"]["base_info"].update(
         {
-            "mmcif_dir": f"{bioemu_root}/{testset}/mmcif",  
-            "bioassembly_dict_dir": f"{bioemu_root}/{testset}/bio",  
-            "indices_fpath": f"{bioemu_root}/{testset}/csv",  
+            "mmcif_dir": f"{bioemu_root}/{testset}/mmcif",
+            "bioassembly_dict_dir": f"{bioemu_root}/{testset}/bio",
+            "indices_fpath": f"{bioemu_root}/{testset}/csv",
             "use_reference_chains_only": False,
         }
     )
     data_configs[f"bioemu-{testset}"].update(
-        {   
+        {
             "precomputed_emb_dir": f"{bioemu_root}/embed_files"
         }
     )
@@ -446,7 +446,7 @@ data_configs[f"unbinding"].update(
             "method_weights": ListValue([0.0, 1.0, 0.0]),
             "crop_size": GlobalConfigValue("train_crop_size"),
         },
-        # "precomputed_emb_dir": 
+        # "precomputed_emb_dir":
         # "precomputed_emb_dir": "NONE",
         "precomputed_emb_dir": os.path.join(UNBINDING_DATA_ROOT_DIR, "embed_unbinding_nomsa")
     }
@@ -486,7 +486,7 @@ data_configs["misato"].update(
             "method_weights": ListValue([0.0, 1.0, 0.0]),
             "crop_size": GlobalConfigValue("train_crop_size"),
         },
-        # "precomputed_emb_dir": 
+        # "precomputed_emb_dir":
         # "precomputed_emb_dir": "NONE",
         "precomputed_emb_dir": os.path.join(MISATO_DATA_ROOT_DIR, "embed_misato_msa_noref"),
     }
@@ -526,7 +526,7 @@ data_configs["mdposit"].update(
             "method_weights": ListValue([0.0, 1.0, 0.0]),
             "crop_size": GlobalConfigValue("train_crop_size"),
         },
-        # "precomputed_emb_dir": 
+        # "precomputed_emb_dir":
         # "precomputed_emb_dir": "NONE",
         "precomputed_emb_dir": os.path.join(MISATO_DATA_ROOT_DIR, "embed_mdposit_noref"),
         "interval_fpath": os.path.join(MISATO_DATA_ROOT_DIR, "MDposit_time_interval.json"),

@@ -239,13 +239,19 @@ def parse_configs(
 
 def update_split_config_with_parser(data_configs):
     # for split in ['train', 'val', 'test', 'repr', 'test_repr']:
-    
+
     for dataset in data_configs["train_sets"] + data_configs["test_sets"]:
         dataset_name = dataset.split("_")[0]
         # data_configs[f"unbinding_{split}"]["base_info"]["indices_fpath"] = os.path.join(
         #     UNBINDING_DATA_ROOT_DIR, f"indices_{split}.csv"
         # )
-        data_configs[dataset]["precomputed_emb_dir"] = data_configs[dataset_name]["precomputed_emb_dir"]
+        # Keep split-specific embedding directories when provided (e.g. lynxkite_train/test).
+        # Fall back to the base dataset directory only when the split value is empty.
+        split_emb_dir = data_configs[dataset].get("precomputed_emb_dir", None)
+        if split_emb_dir in (None, "", "NONE"):
+            data_configs[dataset]["precomputed_emb_dir"] = data_configs[dataset_name][
+                "precomputed_emb_dir"
+            ]
         # data_configs[f"unbinding_{split}"]["base_info"]["indices_fpath"] = 'data/debug_first_frame.csv'
     return data_configs
 
