@@ -35,6 +35,16 @@ LIPID_RESNAMES = {
     "BGL",
     "BGLCN",
     "BMA",
+    "AMAN",
+    "AMA",
+    "NAG",
+    "NDG",
+    "FUC",
+    "GAL",
+    "GLC",
+    "SIA",
+    "DALA",
+    "DAL",
 }
 
 LIPID_RESNAME_PREFIXES = (
@@ -50,6 +60,13 @@ LIPID_RESNAME_PREFIXES = (
     "BGL",
     "BMA",
     "MAN",
+    "AMA",
+    "NAG",
+    "FUC",
+    "GAL",
+    "GLC",
+    "SIA",
+    "DAL",
 )
 
 ION_ELEMENTS = {"NA", "K", "CL", "CA", "MG", "ZN", "MN", "FE", "CU", "CO"}
