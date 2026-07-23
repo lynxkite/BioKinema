@@ -428,6 +428,8 @@ class AF3Trainer(object):
                     torch.cuda.empty_cache()
 
             metrics = simple_metric_wrapper.calc()
+            from pprint import pformat
+            metrics = pformat(metrics)
             self.print(f"Step {self.step}, eval {test_name}: {metrics}")
             if self.configs.use_wandb and DIST_WRAPPER.rank == 0:
                 wandb.log(metrics, step=self.step)
@@ -499,7 +501,7 @@ class AF3Trainer(object):
         #         print(f"参数 {name} 的梯度为 None (未参与计算图)")
         #     elif torch.all(param.grad == 0):
         #         print(f"参数 {name} 的梯度全为 0")
-        
+
         # breakpoint()
 
         # For simplicity, the global training step is used
@@ -646,7 +648,7 @@ class AF3Trainer(object):
         #     dump_dir = "/cto_studio/xtalpi_lab/fengbin/datas/embed_misato_msa_new_debug"
         # else:
         #     dump_dir = "/cto_studio/xtalpi_lab/fengbin/datas/embed_misato_nomsa_new"
-        
+
         # if self.configs.data.msa.enable:
         #     dump_dir = "/cto_studio/xtalpi_lab/fengbin/datas/embed_mdposit_msa"
         # else:
@@ -666,7 +668,7 @@ class AF3Trainer(object):
             self.print(f"Testing on {test_name}")
             evaluated_traj_names = []
             total_batch_num = len(test_dl)
-            
+
             # if DIST_WRAPPER.rank == 0:
             for index, batch in enumerate(tqdm(test_dl, desc="iterating target embeddings")):
                 pid = batch["basic"]["pdb_id"]
@@ -713,8 +715,8 @@ def main():
         parse_sys_args(),
     )
 
-    print(configs.run_name)
-    print(configs)
+    # print(configs.run_name)
+    # print(configs)
     trainer = AF3Trainer(configs)
 
     try:
