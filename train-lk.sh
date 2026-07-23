@@ -22,6 +22,7 @@ export LAYERNORM_TYPE=fast_layernorm
 export USE_DEEPSPEED_EVO_ATTTENTION=true
 export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+export CUTLASS_PATH=DS_USE_CUTLASS_PYTHON_BINDINGS
 
 CUDA_VISIBLE_DEVICES=0 uv run python runner/train.py \
   --run_name "${RUN_NAME}" \

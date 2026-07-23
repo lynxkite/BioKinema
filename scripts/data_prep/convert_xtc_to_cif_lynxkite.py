@@ -1,3 +1,15 @@
+"""
+Run with:
+
+uv run python scripts/data_prep/convert_xtc_to_cif_lynxkite.py \
+   --data_root /data/GROMACS \
+   --outdir /data/converted_trajectories \
+   --target_split all \
+   --num_workers 100 \
+   --frame_stride 10
+
+"""
+
 import argparse
 import csv
 import os
@@ -12,65 +24,7 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 
 
-HOLDOUT_TOKENS = ("A779", "POSTSTERONE")
-
-# Common membrane lipid/cofactor residue names to exclude from ligand candidates.
-LIPID_RESNAMES = {
-    "POPC",
-    "POPE",
-    "POPG",
-    "POPS",
-    "POPA",
-    "DOPC",
-    "DOPE",
-    "DOPG",
-    "DPPC",
-    "DPPE",
-    "DLPC",
-    "DSPC",
-    "DMPC",
-    "CHOL",
-    "CHL",
-    "CLA",
-    "BGL",
-    "BGLCN",
-    "BMA",
-    "AMAN",
-    "AMA",
-    "NAG",
-    "NDG",
-    "FUC",
-    "GAL",
-    "GLC",
-    "SIA",
-    "DALA",
-    "DAL",
-}
-
-LIPID_RESNAME_PREFIXES = (
-    "POP",
-    "DOP",
-    "DSP",
-    "DPP",
-    "DMP",
-    "PSM",
-    "CER",
-    "CHL",
-    "CLA",
-    "BGL",
-    "BMA",
-    "MAN",
-    "AMA",
-    "NAG",
-    "FUC",
-    "GAL",
-    "GLC",
-    "SIA",
-    "DAL",
-)
-
-ION_ELEMENTS = {"NA", "K", "CL", "CA", "MG", "ZN", "MN", "FE", "CU", "CO"}
-ION_RESNAMES = {"SOD", "POT", "CLA", "NA", "K", "CL", "CA", "MG", "ZN"}
+HOLDOUT_MOLECULES = ("A779", "POSTSTERONE")
 
 
 @dataclass
@@ -83,11 +37,20 @@ class TrajectoryJob:
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Convert LynxKite GROMACS trajectories under /data into frame-wise mmCIF files."
+        description="Convert LynxKite GROMACS trajectories under /data/GROMACS into frame-wise mmCIF files."
     )
-    parser.add_argument("--data_root", type=str, default="/data", help="Root path containing date folders.")
-    parser.add_argument("--outdir", type=str, default="./data_lynxkite", help="Output directory.")
-    parser.add_argument("--num_workers", type=int, default=1, help="Number of workers for conversion.")
+    parser.add_argument(
+        "--data_root",
+        type=str,
+        default="/data/GROMACS",
+        help="Root path containing date folders.",
+    )
+    parser.add_argument(
+        "--outdir", type=str, default="./data_lynxkite", help="Output directory."
+    )
+    parser.add_argument(
+        "--num_workers", type=int, default=1, help="Number of workers for conversion."
+    )
     parser.add_argument(
         "--frame_stride",
         type=int,
@@ -117,30 +80,6 @@ def parse_args():
         default=None,
         help="Optional cap for discovered trajectory jobs (useful for smoke tests).",
     )
-    parser.add_argument(
-        "--allow_pdb_fallback",
-        action="store_true",
-        help="Allow project-level PDB fallback when no GRO/TPR topology is found.",
-    )
-    parser.add_argument(
-        "--no_strict_topology_check",
-        action="store_false",
-        dest="strict_topology_check",
-        help="Disable strict atom-name/order sanity check between topology and temporary PDB frame.",
-    )
-    parser.add_argument(
-        "--ligand_cutoff_nm",
-        type=float,
-        default=0.6,
-        help="Distance cutoff (nm) to protein for keeping non-protein ligand atoms.",
-    )
-    parser.add_argument(
-        "--max_ligand_atoms",
-        type=int,
-        default=256,
-        help="Maximum atoms in one non-protein residue to consider as ligand candidate.",
-    )
-    parser.set_defaults(strict_topology_check=True)
     return parser.parse_args()
 
 
@@ -154,71 +93,24 @@ def sanitize_component(text: str) -> str:
     return "".join(ch if (ch.isalnum() or ch in "._-") else "_" for ch in safe)
 
 
-def pick_topology(xtc_path: Path, project_dir: Path, allow_pdb_fallback: bool = False):
-    parent = xtc_path.parent
-    stem = xtc_path.stem
-    base_stem = stem.split(".part")[0]
-
-    # mdtraj cannot load .tpr topology directly, so prefer .gro candidates only.
-    direct_candidates = [
-        parent / f"{stem}.gro",
-        parent / f"{base_stem}.gro",
-        parent / "md.gro",
-        parent / "npt2.gro",
-        parent / "npt1.gro",
-    ]
-    for candidate in direct_candidates:
-        if candidate.exists():
-            return candidate
-
-    # For segmented streams, reuse any available segment .gro in the same series.
-    segmented_gro = sorted(parent.glob(f"{base_stem}.part*.gro"))
-    if segmented_gro:
-        return segmented_gro[-1]
-
-    # Last chance before PDB fallback: any .gro in the same folder.
-    any_gro = sorted(parent.glob("*.gro"))
-    if any_gro:
-        return any_gro[0]
-
-    if not allow_pdb_fallback:
-        return None
-
-    aligned_pdbs = sorted(project_dir.glob("*aligned*.pdb"))
-    if aligned_pdbs:
-        return aligned_pdbs[0]
-
-    project_pdbs = sorted(project_dir.glob("*.pdb"))
-    if project_pdbs:
-        return project_pdbs[0]
-
-    return None
-
-
 def assign_split(name: str) -> str:
     name_upper = name.upper()
-    for token in HOLDOUT_TOKENS:
+    for token in HOLDOUT_MOLECULES:
         if token in name_upper:
             return "test"
     return "train"
 
 
-def discover_jobs(data_root: Path, allow_pdb_fallback: bool = False):
+def discover_jobs(data_root: Path):
     jobs = []
     skipped_no_top = []
     date_dirs = sorted([d for d in data_root.iterdir() if d.is_dir()])
     for date_dir in date_dirs:
         project_dirs = sorted([d for d in date_dir.iterdir() if d.is_dir()])
         for project_dir in project_dirs:
-            xtc_files = sorted(project_dir.rglob("*.xtc"))
+            xtc_files = sorted(project_dir.rglob("md.xtc"))
             for xtc_path in xtc_files:
-                if xtc_path.name.startswith("."):
-                    continue
-                top_path = pick_topology(xtc_path, project_dir, allow_pdb_fallback=allow_pdb_fallback)
-                if top_path is None:
-                    skipped_no_top.append(str(xtc_path))
-                    continue
-
+                top_path = xtc_path.parent / "md.gro"
                 rel_stream = xtc_path.relative_to(project_dir).with_suffix("")
                 trajectory_key = "__".join(
                     [
@@ -242,8 +134,12 @@ def discover_jobs(data_root: Path, allow_pdb_fallback: bool = False):
 
 def write_split_manifests(jobs, split_dir: Path):
     split_dir.mkdir(parents=True, exist_ok=True)
-    train_jobs = sorted([j for j in jobs if j.split == "train"], key=lambda x: x.trajectory_key)
-    test_jobs = sorted([j for j in jobs if j.split == "test"], key=lambda x: x.trajectory_key)
+    train_jobs = sorted(
+        [j for j in jobs if j.split == "train"], key=lambda x: x.trajectory_key
+    )
+    test_jobs = sorted(
+        [j for j in jobs if j.split == "test"], key=lambda x: x.trajectory_key
+    )
 
     train_csv = split_dir / "lynxkite_train.csv"
     test_csv = split_dir / "lynxkite_test.csv"
@@ -258,144 +154,9 @@ def write_split_manifests(jobs, split_dir: Path):
     return train_csv, test_csv
 
 
-def _parse_atom_site_fields(cif_path: Path):
-    fields = []
-    rows = []
-    in_loop = False
-    with open(cif_path) as f:
-        for raw_line in f:
-            line = raw_line.rstrip("\n")
-            if line == "loop_":
-                in_loop = True
-                fields = []
-                rows = []
-                continue
-            if in_loop and line.startswith("_atom_site."):
-                fields.append(line.strip())
-                continue
-            if in_loop and fields and (line.startswith("ATOM") or line.startswith("HETATM")):
-                rows.append(line.split())
-                continue
-            if in_loop and fields and rows and not line.startswith("_atom_site."):
-                break
-    return fields, rows
-
-
-def build_cif_metadata_summary(cif_path: Path):
-    fields, rows = _parse_atom_site_fields(cif_path)
-    if not fields or not rows:
-        return {
-            "n_label_entity_ids": 0,
-            "n_label_asym_ids": 0,
-            "n_label_comp_ids": 0,
-            "label_entity_ids": "",
-            "label_asym_ids": "",
-            "label_comp_ids": "",
-        }
-
-    field_to_idx = {name.replace("_atom_site.", ""): i for i, name in enumerate(fields)}
-    entity_idx = field_to_idx.get("label_entity_id")
-    asym_idx = field_to_idx.get("label_asym_id")
-    comp_idx = field_to_idx.get("label_comp_id")
-
-    entity_vals = sorted({r[entity_idx] for r in rows if entity_idx is not None and entity_idx < len(r)})
-    asym_vals = sorted({r[asym_idx] for r in rows if asym_idx is not None and asym_idx < len(r)})
-    comp_vals = sorted({r[comp_idx] for r in rows if comp_idx is not None and comp_idx < len(r)})
-
-    return {
-        "n_label_entity_ids": len(entity_vals),
-        "n_label_asym_ids": len(asym_vals),
-        "n_label_comp_ids": len(comp_vals),
-        "label_entity_ids": ",".join(entity_vals[:20]),
-        "label_asym_ids": ",".join(asym_vals[:20]),
-        "label_comp_ids": ",".join(comp_vals[:20]),
-    }
-
-
-def strict_topology_sanity_check(traj):
-    top_atom_names = [atom.name for atom in traj.topology.atoms]
-    with tempfile.NamedTemporaryFile(suffix=".pdb") as temp:
-        traj[0].save_pdb(temp.name)
-        pdb_structure = load_structure(temp.name)
-    pdb_atom_names = pdb_structure.atom_name.tolist()
-
-    if len(top_atom_names) != len(pdb_atom_names):
-        raise ValueError(
-            "Topology atom count mismatch after save/load: "
-            f"top={len(top_atom_names)} vs pdb={len(pdb_atom_names)}"
-        )
-
-    for idx, (top_atom, pdb_atom) in enumerate(zip(top_atom_names, pdb_atom_names)):
-        if top_atom != pdb_atom:
-            raise ValueError(
-                "Topology atom name/order mismatch at atom index "
-                f"{idx}: top_atom_name={top_atom}, pdb_atom_name={pdb_atom}"
-            )
-
-
-def _is_ion_residue(residue):
-    if residue.name.upper() in ION_RESNAMES:
-        return True
-    if residue.n_atoms != 1:
-        return False
-    atom = list(residue.atoms)[0]
-    if atom.element is None:
-        return False
-    return atom.element.symbol.upper() in ION_ELEMENTS
-
-
-def _is_membrane_like_residue(residue):
-    resname = residue.name.upper()
-    if resname in LIPID_RESNAMES:
-        return True
-    return any(resname.startswith(prefix) for prefix in LIPID_RESNAME_PREFIXES)
-
-
-def select_protein_and_ligand_atoms(traj, ligand_cutoff_nm: float, max_ligand_atoms: int):
+def select_protein_and_ligand_atoms(traj):
     top = traj.topology
-    protein_atom_indices = top.select("protein")
-    if protein_atom_indices.size == 0:
-        raise ValueError("No protein atoms found; cannot apply protein+ligand filter")
-
-    candidate_residues = []
-    candidate_atom_indices = []
-    for residue in top.residues:
-        if residue.is_protein:
-            continue
-        if residue.is_water:
-            continue
-        if _is_membrane_like_residue(residue):
-            continue
-        if residue.n_atoms > max_ligand_atoms:
-            continue
-        if _is_ion_residue(residue):
-            continue
-
-        atom_indices = [atom.index for atom in residue.atoms]
-        if not atom_indices:
-            continue
-        candidate_residues.append(residue)
-        candidate_atom_indices.extend(atom_indices)
-
-    ligand_atom_indices = []
-    ligand_residue_names = []
-    if candidate_atom_indices:
-        neighbors = mdtraj.compute_neighbors(
-            traj[0],
-            cutoff=ligand_cutoff_nm,
-            query_indices=protein_atom_indices,
-            haystack_indices=np.array(candidate_atom_indices, dtype=int),
-        )[0]
-        neighbor_set = set(int(i) for i in neighbors)
-
-        for residue in candidate_residues:
-            atom_indices = [atom.index for atom in residue.atoms]
-            if any(idx in neighbor_set for idx in atom_indices):
-                ligand_atom_indices.extend(atom_indices)
-                ligand_residue_names.append(residue.name)
-
-    selected = sorted(set(int(i) for i in protein_atom_indices.tolist() + ligand_atom_indices))
-    return np.array(selected, dtype=int), sorted(set(ligand_residue_names))
+    return top.select("protein or resname LIG")
 
 
 def convert_job(
@@ -403,9 +164,6 @@ def convert_job(
     mmcif_root: Path,
     frame_stride: int,
     skip_existing: bool,
-    strict_topology_check: bool,
-    ligand_cutoff_nm: float,
-    max_ligand_atoms: int,
 ):
     split_dir = mmcif_root / job.split
     split_dir.mkdir(parents=True, exist_ok=True)
@@ -420,15 +178,10 @@ def convert_job(
             "split": job.split,
             "error": f"failed to load: {exc}",
             "generated": generated_paths,
-            "audit": {},
         }
 
     try:
-        selected_atom_indices, ligand_residue_names = select_protein_and_ligand_atoms(
-            traj,
-            ligand_cutoff_nm=ligand_cutoff_nm,
-            max_ligand_atoms=max_ligand_atoms,
-        )
+        selected_atom_indices = select_protein_and_ligand_atoms(traj)
         traj = traj.atom_slice(selected_atom_indices)
     except Exception as exc:
         return {
@@ -437,21 +190,7 @@ def convert_job(
             "split": job.split,
             "error": f"protein+ligand filtering failed: {exc}",
             "generated": generated_paths,
-            "audit": {},
         }
-
-    if strict_topology_check:
-        try:
-            strict_topology_sanity_check(traj)
-        except Exception as exc:
-            return {
-                "ok": False,
-                "job": job.trajectory_key,
-                "split": job.split,
-                "error": f"strict topology check failed: {exc}",
-                "generated": generated_paths,
-                "audit": {},
-            }
 
     frame_id = 0
     for frame_idx in range(0, traj.n_frames, frame_stride):
@@ -474,30 +213,7 @@ def convert_job(
                 "split": job.split,
                 "error": f"failed on frame {frame_idx}: {exc}",
                 "generated": generated_paths,
-                "audit": {},
             }
-
-    audit = {
-        "n_frames": traj.n_frames,
-        "n_atoms": traj.n_atoms,
-        "top_ext": job.top_path.suffix.lower(),
-        "topology": str(job.top_path),
-        "ligand_residue_names": ",".join(ligand_residue_names[:20]),
-        "n_ligand_residue_types": len(set(ligand_residue_names)),
-    }
-    if generated_paths:
-        audit.update(build_cif_metadata_summary(Path(generated_paths[0])))
-    else:
-        audit.update(
-            {
-                "n_label_entity_ids": 0,
-                "n_label_asym_ids": 0,
-                "n_label_comp_ids": 0,
-                "label_entity_ids": "",
-                "label_asym_ids": "",
-                "label_comp_ids": "",
-            }
-        )
 
     return {
         "ok": True,
@@ -505,7 +221,6 @@ def convert_job(
         "split": job.split,
         "error": None,
         "generated": generated_paths,
-        "audit": audit,
     }
 
 
@@ -513,57 +228,6 @@ def write_path_list(paths, out_path: Path):
     with open(out_path, "w") as f:
         for path in sorted(paths):
             f.write(path + "\n")
-
-
-def write_metadata_audit(results, jobs_by_key, out_path: Path):
-    fieldnames = [
-        "job",
-        "split",
-        "status",
-        "xtc_path",
-        "top_path",
-        "n_frames",
-        "n_atoms",
-        "top_ext",
-        "n_cif_written",
-        "n_label_entity_ids",
-        "n_label_asym_ids",
-        "n_label_comp_ids",
-        "label_entity_ids",
-        "label_asym_ids",
-        "label_comp_ids",
-        "n_ligand_residue_types",
-        "ligand_residue_names",
-        "error",
-    ]
-    with open(out_path, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for r in sorted(results, key=lambda x: x["job"]):
-            job = jobs_by_key.get(r["job"])
-            audit = r.get("audit", {})
-            writer.writerow(
-                {
-                    "job": r["job"],
-                    "split": r["split"],
-                    "status": "ok" if r["ok"] else "error",
-                    "xtc_path": str(job.xtc_path) if job else "",
-                    "top_path": str(job.top_path) if job else "",
-                    "n_frames": audit.get("n_frames", ""),
-                    "n_atoms": audit.get("n_atoms", ""),
-                    "top_ext": audit.get("top_ext", ""),
-                    "n_cif_written": len(r.get("generated", [])),
-                    "n_label_entity_ids": audit.get("n_label_entity_ids", ""),
-                    "n_label_asym_ids": audit.get("n_label_asym_ids", ""),
-                    "n_label_comp_ids": audit.get("n_label_comp_ids", ""),
-                    "label_entity_ids": audit.get("label_entity_ids", ""),
-                    "label_asym_ids": audit.get("label_asym_ids", ""),
-                    "label_comp_ids": audit.get("label_comp_ids", ""),
-                    "n_ligand_residue_types": audit.get("n_ligand_residue_types", ""),
-                    "ligand_residue_names": audit.get("ligand_residue_names", ""),
-                    "error": r.get("error", "") or "",
-                }
-            )
 
 
 def main():
@@ -582,7 +246,7 @@ def main():
     if not data_root.exists():
         raise FileNotFoundError(f"Data root does not exist: {data_root}")
 
-    jobs, skipped_no_top = discover_jobs(data_root, allow_pdb_fallback=args.allow_pdb_fallback)
+    jobs, skipped_no_top = discover_jobs(data_root)
     train_csv, test_csv = write_split_manifests(jobs, split_dir)
 
     selected_jobs = jobs
@@ -595,10 +259,6 @@ def main():
     print(f"Selected {len(selected_jobs)} trajectory jobs for conversion.")
     print(f"Split manifests: {train_csv} and {test_csv}")
     print(f"No-topology skipped trajectories: {len(skipped_no_top)}")
-    print(f"PDB fallback allowed: {args.allow_pdb_fallback}")
-    print(f"Strict topology check: {args.strict_topology_check}")
-    print(f"Ligand cutoff (nm): {args.ligand_cutoff_nm}")
-    print(f"Max ligand atoms per residue: {args.max_ligand_atoms}")
 
     if not selected_jobs:
         return
@@ -613,9 +273,6 @@ def main():
                         mmcif_root,
                         args.frame_stride,
                         args.skip_existing,
-                        args.strict_topology_check,
-                        args.ligand_cutoff_nm,
-                        args.max_ligand_atoms,
                     )
                     for job in selected_jobs
                 ),
@@ -632,9 +289,6 @@ def main():
                     mmcif_root,
                     args.frame_stride,
                     args.skip_existing,
-                    args.strict_topology_check,
-                    args.ligand_cutoff_nm,
-                    args.max_ligand_atoms,
                 )
             )
 
@@ -652,14 +306,9 @@ def main():
     write_path_list(train_paths, train_txt)
     write_path_list(test_paths, test_txt)
 
-    jobs_by_key = {j.trajectory_key: j for j in selected_jobs}
-    audit_csv = split_dir / "lynxkite_metadata_audit.csv"
-    write_metadata_audit(results, jobs_by_key, audit_csv)
-
     print(f"Done. Success: {len(results) - len(errors)}, Failed: {len(errors)}")
     print(f"Train mmCIF list: {train_txt}")
     print(f"Test mmCIF list: {test_txt}")
-    print(f"Metadata audit: {audit_csv}")
 
     if errors:
         err_path = split_dir / "lynxkite_conversion_errors.txt"
