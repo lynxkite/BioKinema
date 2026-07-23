@@ -13,12 +13,12 @@ uv run python scripts/data_prep/convert_xtc_to_cif_lynxkite.py \
 import argparse
 import csv
 import os
+import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
 import mdtraj
-import numpy as np
 from biotite.structure.io import load_structure, save_structure
 from joblib import Parallel, delayed
 from tqdm import tqdm
@@ -159,6 +159,68 @@ def select_protein_and_ligand_atoms(traj):
     return top.select("protein or resname LIG")
 
 
+def center_xtc(xtc_path: Path, top_path: Path) -> Path:
+    centered_xtc_path = xtc_path.with_name(f"{xtc_path.stem}_centered.xtc")
+    pbc_xtc_path = xtc_path.with_name(f"{xtc_path.stem}_pbc.xtc")
+
+    if centered_xtc_path.exists():
+        return centered_xtc_path
+
+    env = os.environ.copy()
+    env["GMX_MAXBACKUP"] = "-1"
+
+    pbc_cmd = [
+        "gmx",
+        "trjconv",
+        "-s",
+        str(top_path).replace(".gro", ".tpr"),
+        "-f",
+        str(xtc_path),
+        "-o",
+        str(pbc_xtc_path),
+        "-pbc",
+        "mol",
+    ]
+    center_cmd = [
+        "gmx",
+        "trjconv",
+        "-s",
+        str(top_path).replace(".gro", ".tpr"),
+        "-f",
+        str(pbc_xtc_path),
+        "-o",
+        str(centered_xtc_path),
+        "-fit",
+        "rot+trans",
+        "-center",
+    ]
+
+    pbc_proc = subprocess.run(
+        pbc_cmd,
+        input="0\n",
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+    if pbc_proc.returncode != 0 or not pbc_xtc_path.exists():
+        raise RuntimeError(pbc_proc.stderr.strip() or pbc_proc.stdout.strip())
+
+    center_proc = subprocess.run(
+        center_cmd,
+        input="1\n1\n0\n",
+        text=True,
+        capture_output=True,
+        env=env,
+        check=False,
+    )
+    if center_proc.returncode != 0 or not centered_xtc_path.exists():
+        raise RuntimeError(center_proc.stderr.strip() or center_proc.stdout.strip())
+    pbc_xtc_path.unlink()
+
+    return centered_xtc_path
+
+
 def convert_job(
     job: TrajectoryJob,
     mmcif_root: Path,
@@ -167,10 +229,11 @@ def convert_job(
 ):
     split_dir = mmcif_root / job.split
     split_dir.mkdir(parents=True, exist_ok=True)
+    centered_xtc_path = center_xtc(job.xtc_path, job.top_path)
 
     generated_paths = []
     try:
-        traj = mdtraj.load(str(job.xtc_path), top=str(job.top_path))
+        traj = mdtraj.load(str(centered_xtc_path), top=str(job.top_path))
     except Exception as exc:
         return {
             "ok": False,
